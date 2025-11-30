@@ -1,0 +1,72 @@
+stages:
+  - ui_test
+  - prepare_cookie
+  - generate_allure
+  - jmeter_test
+  - pages
+
+playwright_login_test:
+  stage: ui_test
+  image: maven:3.9.6-eclipse-temurin-17
+  script:
+    - mvn -q dependency:resolve
+    - mvn -q exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install"
+
+    # Restore trend history
+    - if [ -d public/allure-report/history ]; then
+        cp -r public/allure-report/history allure-results/history;
+      fi
+
+    - mvn -q test
+  artifacts:
+    paths:
+      - allure-results/
+      - cookies/
+    expire_in: 3 hrs
+
+prepare_cookie:
+  stage: prepare_cookie
+  image: alpine
+  needs: [playwright_login_test]
+  script:
+    - latest=$(ls -t cookies | head -1)
+    - cp cookies/$latest cookie.txt
+  artifacts:
+    paths:
+      - cookie.txt
+
+generate_allure:
+  stage: generate_allure
+  image: openjdk:17
+  needs: [playwright_login_test]
+  script:
+    - apt-get update && apt-get install -y wget unzip
+    - wget https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.22.0/allure-commandline-2.22.0.zip
+    - unzip allure-commandline-2.22.0.zip -d allure/
+    - allure/bin/allure generate allure-results -o allure-report --clean
+  artifacts:
+    paths:
+      - allure-report/
+
+jmeter_test:
+  stage: jmeter_test
+  image: maven:3.9.6-eclipse-temurin-17
+  needs: [prepare_cookie]
+  script:
+    - mvn -q -DskipTests=true verify
+  artifacts:
+    paths:
+      - results/
+      - results/dashboard/
+
+pages:
+  stage: pages
+  script:
+    - mkdir public
+    - cp -r allure-report public/allure-report
+    - cp -r results/dashboard public/jmeter-report
+  artifacts:
+    paths:
+      - public
+  only:
+    - main
