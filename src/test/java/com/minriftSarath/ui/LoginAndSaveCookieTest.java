@@ -11,18 +11,35 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvFileSource;
 
 import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.UUID;
 
 @Execution(ExecutionMode.CONCURRENT)
-//@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class LoginAndSaveCookieTest {
+	
+	// Path to cookie file
+    private final Path resourceDir = Paths.get("src", "test", "resources", "cookies");
+    private final Path cookieFile = resourceDir.resolve("Mincookies.txt");
+
+    @BeforeAll
+    void clearCookieFile() throws IOException {
+        Files.createDirectories(cookieFile.getParent());
+        Files.write(cookieFile, new byte[0], StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        System.out.println("Cookie file cleared: " + cookieFile.toAbsolutePath());
+    }
 
 	@ParameterizedTest
 	@CsvFileSource(resources = "/credentials.csv", numLinesToSkip = 0)
 	@DisplayName("Parallel Login and Cookie Save")
 	public void loginAndSaveCookie(String username, String otp, String password) throws Exception {
+		
+		
 
 		System.out.println("Running for user " + username + " on thread: " + Thread.currentThread().getName());
 
@@ -34,6 +51,7 @@ public class LoginAndSaveCookieTest {
 					.setRecordVideoDir(Paths.get("allure-results/videos")).setRecordVideoSize(1280, 720));
 
 			Page page = context.newPage();
+			page.setDefaultTimeout(600000); 
 
 			try {
 				Allure.step("Navigating to login page");
@@ -59,23 +77,37 @@ public class LoginAndSaveCookieTest {
 
 				Allure.step("Extracting cookies");
 
-				List<Cookie> allCookies = context.cookies("https://preprod.signicat.com");
+				List<Cookie> allCookies = context.cookies("https://minbedrift-frontend-test3-trygno.ujasiri.net");
 				for (Cookie c : allCookies) {
 					System.out.println("COOKIE: " + c.name + " domain=" + c.domain + " value=" + c.value);
 				}
 
-				String cookieValue = allCookies.stream().filter(c -> c.name.toLowerCase().contains("session"))
-						.map(c -> c.value).findFirst()
-						.orElseThrow(() -> new RuntimeException("Session cookie not found"));
+				// List of cookie names you want to save
+				String[] cookieNames = {"MinBedriftSession", "MinBedriftCookie"};
+				
 
-				String filename = "cookies/" + username + "_cookie_" + UUID.randomUUID() + ".txt";
-				try (FileWriter fw = new FileWriter(filename)) {
-					fw.write(cookieValue);
+				// Write cookies to file in append mode
+				synchronized (LoginAndSaveCookieTest.class) { // synchronize for thread safety
+				try (FileWriter fw = new FileWriter(cookieFile.toFile(), true)) { // 'true' -> append mode
+				    for (String cookieName : cookieNames) {
+				        String cookieValue = allCookies.stream()
+				                .filter(c -> c.name.equals(cookieName))
+				                .map(c -> c.value)
+				                .findFirst()
+				                .orElse("COOKIE_NOT_FOUND"); // handle missing cookies
+
+				        // Write in format: username,cookieName,cookieValue
+				        fw.write(username + "," + cookieName + "," + cookieValue + "\n");
+				    }
+				}
 				}
 
-				Allure.step("Cookie saved: " + filename);
+				System.out.println("Cookies saved to: " + cookieFile.toFile());
+
+				Allure.step("Cookie saved: " + cookieFile.toFile());
 
 			} catch (Exception ex) {
+				System.out.println(ex);
 				// Screenshot
 				byte[] screenshot = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
 				Allure.addAttachment("Failure Screenshot", "image/png", new java.io.ByteArrayInputStream(screenshot),
@@ -87,9 +119,12 @@ public class LoginAndSaveCookieTest {
 
 				throw ex;
 
-			} finally {
+			} 
+			finally {
 				browser.close();
 			}
+			
 		}
-	}
+		
+		}
 }
