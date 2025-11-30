@@ -1,83 +1,95 @@
 package com.minriftSarath.ui;
 
 import com.microsoft.playwright.*;
+import com.microsoft.playwright.options.Cookie;
+
 import io.qameta.allure.Allure;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvFileSource;
 
 import java.io.FileWriter;
-import java.io.IOException;
-import java.nio.file.*;
-import java.util.*;
+import java.nio.file.Paths;
+import java.util.List;
+import java.util.UUID;
 
 @Execution(ExecutionMode.CONCURRENT)
+//@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class LoginAndSaveCookieTest {
 
-    @RepeatedTest(100)
-    @DisplayName("Parallel Login and Cookie Save")
-    public void loginAndSaveCookie() throws IOException {
+	@ParameterizedTest
+	@CsvFileSource(resources = "/credentials.csv", numLinesToSkip = 0)
+	@DisplayName("Parallel Login and Cookie Save")
+	public void loginAndSaveCookie(String username, String otp, String password) throws Exception {
 
-        try (Playwright playwright = Playwright.create()) {
+		System.out.println("Running for user " + username + " on thread: " + Thread.currentThread().getName());
 
-            Browser browser = playwright.chromium().launch(
-                    new BrowserType.LaunchOptions().setHeadless(true)
-            );
+		try (Playwright playwright = Playwright.create()) {
 
-            BrowserContext context = browser.newContext(
-                    new Browser.NewContextOptions()
-                            .setRecordVideoDir(Paths.get("allure-results/videos"))
-                            .setRecordVideoSize(1280, 720)
-            );
+			Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(false));
 
-            Page page = context.newPage();
+			BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+					.setRecordVideoDir(Paths.get("allure-results/videos")).setRecordVideoSize(1280, 720));
 
-            try {
+			Page page = context.newPage();
 
-                Allure.step("Navigating to login page");
-                page.navigate("https://test3-tgno.ujasri.net/login");
+			try {
+				Allure.step("Navigating to login page");
+				page.navigate("https://minbedrift-frontend-test3-trygno.ujasiri.net/minbedrift/login.html?");
 
-                Allure.step("Entering credentials");
-                page.fill("#username", System.getenv("LOGIN_USERNAME"));
-                page.fill("#password", System.getenv("LOGIN_PASSWORD"));
-                page.click("#loginButton");
+				page.click("(//a[@target='_self' and @role='button'])[1]");
 
-                page.waitForURL("**/dashboard");
+				Allure.step("Entering FN/SSN: " + username);
+				page.frameLocator("iframe[title='BankID']").locator("input[inputmode='numeric']").fill(username);
+				page.frameLocator("iframe[title='BankID']").locator("//button[@type='submit']").click();
 
-                Allure.step("Extracting cookies");
-                List<BrowserContext.Cookie> cookies = context.cookies();
+				Allure.step("Entering OTP");
+				page.frameLocator("iframe[title='BankID']").locator("//input[@type='password']").fill(otp);
+				page.frameLocator("iframe[title='BankID']").locator("//button[@type='submit']").click();
 
-                String cookieValue = cookies.stream()
-                        .filter(c -> c.name.equals("MinBedriftSession"))
-                        .map(c -> c.value)
-                        .findFirst()
-                        .orElseThrow(() ->
-                                new RuntimeException("Cookie not found")
-                        );
+                Allure.step("Entering password");
+                page.frameLocator("iframe[title='BankID']")
+                .locator("//input[@type='password']")
+                .fill(password);
+                page.frameLocator("iframe[title='BankID']").locator("//button[@type='submit']").click();
 
-                String filename = "cookies/cookie_" + UUID.randomUUID() + ".txt";
-                FileWriter fw = new FileWriter(filename);
-                fw.write(cookieValue);
-                fw.close();
+                page.waitForURL("**/velg-bedrift");
 
-                Allure.step("Cookie saved: " + filename);
+				Allure.step("Extracting cookies");
 
-            } catch (Exception ex) {
+				List<Cookie> allCookies = context.cookies("https://preprod.signicat.com");
+				for (Cookie c : allCookies) {
+					System.out.println("COOKIE: " + c.name + " domain=" + c.domain + " value=" + c.value);
+				}
 
-                // Attach screenshot
-                byte[] screenshot = page.screenshot(
-                        new Page.ScreenshotOptions().setFullPage(true)
-                );
-                Allure.attachment("Failure Screenshot", "image/png", screenshot, ".png");
+				String cookieValue = allCookies.stream().filter(c -> c.name.toLowerCase().contains("session"))
+						.map(c -> c.value).findFirst()
+						.orElseThrow(() -> new RuntimeException("Session cookie not found"));
 
-                // Attach HTML
-                Allure.attachment("Page HTML", page.content());
+				String filename = "cookies/" + username + "_cookie_" + UUID.randomUUID() + ".txt";
+				try (FileWriter fw = new FileWriter(filename)) {
+					fw.write(cookieValue);
+				}
 
-                throw ex;
+				Allure.step("Cookie saved: " + filename);
 
-            } finally {
-                browser.close();
-            }
-        }
-    }
+			} catch (Exception ex) {
+				// Screenshot
+				byte[] screenshot = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+				Allure.addAttachment("Failure Screenshot", "image/png", new java.io.ByteArrayInputStream(screenshot),
+						"png");
+
+				// HTML source
+				Allure.addAttachment("Page HTML", "text/html",
+						new java.io.ByteArrayInputStream(page.content().getBytes()), "html");
+
+				throw ex;
+
+			} finally {
+				browser.close();
+			}
+		}
+	}
 }
