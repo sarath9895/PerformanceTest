@@ -1,0 +1,46 @@
+# Maven target folder
+/target/
+/out/
+
+# IntelliJ IDEA files
+/.idea/
+/*.iml
+/.classpath
+/.project
+/.settings/
+
+# Eclipse files
+/.metadata/
+/*.tmp
+/*.bak
+/*.swp
+/.externalToolBuilders/
+/*.launch
+
+# Playwright videos and screenshots
+/playwright-report/
+allure-results/
+videos/
+screenshots/
+
+# Cookies storage
+cookies/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# JMeter results
+results/
+*.jtl
+
+# Maven local repository (optional, if you want to ignore)
+/.m2/
+
+# ZIP or build artifacts
+*.zip
+*.tar.gz
+*.jar
